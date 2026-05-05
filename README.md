@@ -16,14 +16,15 @@ height="70">
 
 </h4>
 
-Pymatgen (Python Materials Genomics) is a robust, open-source Python
-library for materials analysis. These are some of the main features:
+`pymatgen-core` is the foundational subset of [Pymatgen](https://github.com/materialsproject/pymatgen) (Python Materials Genomics), the robust open-source Python library for materials analysis. It contains the core data structures, symmetry/lattice operations, and the I/O layer for many DFT/MD codes, with minimal dependencies. The full `pymatgen` package builds on top of `pymatgen-core` and adds higher-level analysis modules (phase diagrams, Pourbaix diagrams, diffusion analyses, etc.) and add-ons.
+
+Some of the main features of `pymatgen-core`:
 
 1. Highly flexible classes for the representation of `Element`, `Site`, `Molecule` and `Structure` objects.
 2. Extensive input/output support, including support for [VASP](https://www.vasp.at/), [ABINIT](https://abinit.github.io/abinit_web/), [CIF](https://wikipedia.org/wiki/Crystallographic_Information_File), [Gaussian](https://gaussian.com), [XYZ](https://wikipedia.org/wiki/XYZ_file_format), and many other file formats.
-3. Powerful analysis tools, including generation of phase diagrams, Pourbaix diagrams, diffusion analyses, reactions, etc.
-4. Electronic structure analyses, such as density of states and band structure.
-5. Integration with the [Materials Project] REST API.
+3. Core analysis tools, including symmetry detection, structure matching, bond valence, Ewald summation, and more.
+4. Electronic structure data classes for density of states and band structure.
+5. Foundational utilities used by the broader pymatgen ecosystem (the full `pymatgen` package, `pymatgen-analysis-*` add-ons, atomate, FireWorks, etc.).
 
 Pymatgen is free to use. However, we also welcome your help to improve this library by making your contributions. These contributions can be in the form of additional tools or modules you develop, or feature requests and bug reports. The following are resources for `pymatgen`:
 
@@ -37,7 +38,7 @@ Pymatgen is free to use. However, we also welcome your help to improve this libr
 [github issue]: https://github.com/materialsproject/pymatgen-core/issues
 [github discussion]: https://github.com/materialsproject/pymatgen-core/discussions
 
-## Why use `pymatgen`?
+## Why use `pymatgen-core`?
 
 1. **It is (fairly) robust.** Pymatgen is used by thousands of researchers and is the analysis code powering the
    [Materials Project]. The analysis it produces survives rigorous scrutiny every single day. Bugs tend to be found
@@ -57,24 +58,32 @@ Pymatgen is free to use. However, we also welcome your help to improve this libr
 6. **A growing ecosystem of developers and add-ons**. Pymatgen has contributions from materials scientists all over
    the world. We also now have an architecture to support add-ons that expand `pymatgen`'s functionality even
    further. Check out the [contributing page](https://pymatgen.org/contributing) and [add-ons page](https://pymatgen.org/addons) for details and examples.
+7. **It is lightweight.** `pymatgen-core` carries only the dependencies needed for the core data structures and
+   I/O. Use it directly when you need a small footprint, or install the full [`pymatgen`](https://github.com/materialsproject/pymatgen) package when you need the higher-level analysis modules.
 
 ## Installation
 
 The version at the Python Package Index [PyPI] is always the latest stable release that is relatively bug-free and can be installed via `pip`:
 
-[pypi]: https://pypi.org/project/pymatgen
+[pypi]: https://pypi.org/project/pymatgen-core
+
+```sh
+pip install pymatgen-core
+```
+
+If you need the higher-level analysis modules (phase diagrams, Pourbaix, reaction calculator, etc.), install the full [`pymatgen`](https://pypi.org/project/pymatgen) package instead, which depends on `pymatgen-core`:
 
 ```sh
 pip install pymatgen
 ```
 
-If you'd like to use the latest unreleased changes on the main branch, you can install directly from GitHub:
+If you'd like to use the latest unreleased changes on the main branch, you can install `pymatgen-core` directly from GitHub:
 
 ```sh
 pip install -U git+https://github.com/materialsproject/pymatgen-core
 ```
 
-Some extra functionality (e.g., generation of POTCARs) does require additional setup (see the [`pymatgen` docs]).
+Note that `pymatgen-core` imports under the same `pymatgen` namespace (e.g. `from pymatgen.core import Structure`), so existing code continues to work. Some extra functionality (e.g., generation of POTCARs) does require additional setup (see the [`pymatgen` docs]).
 
 ## Change Log
 
