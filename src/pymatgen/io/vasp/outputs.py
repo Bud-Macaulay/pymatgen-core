@@ -55,6 +55,9 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Sequence
     from typing import Literal, Self, TypeAlias
 
+    from h5py import File as H5File
+    from h5py import Group as H5Group
+
     # Avoid name conflict with pymatgen.core.Element
     from lxml.etree import _Element as XML_Element
     from numpy.typing import NDArray
@@ -6061,6 +6064,27 @@ class Vaspwave(Vasprun):
     public interface that matches Wavecar where practical. Files without a
     ``/wave`` group can still be used to read native charge-density and
     local-potential grids.
+
+    Examples:
+        Read native charge-density and local-potential grids from
+        ``vaspwave.h5``:
+
+        >>> vaspwave = Vaspwave("vaspwave.h5")
+        >>> chgcar = vaspwave.get_chgcar()
+        >>> locpot = vaspwave.get_locpot()
+        >>> chgcar.write_file("CHGCAR")
+        >>> locpot.write_file("LOCPOT")
+
+        Use wavefunction data, when the file contains a ``/wave`` group, with
+        a Wavecar-like interface:
+
+        >>> coeffs = vaspwave.get_band_coeffs(0, 0, 0)
+        >>> mesh = vaspwave.fft_mesh(0, 0)
+
+        Generate a partial charge density from a selected wavefunction:
+
+        >>> poscar = Poscar.from_file("POSCAR")
+        >>> parchg = vaspwave.get_parchg(poscar, 0, 0)
     """
 
     def __init__(self, filename: str | Path) -> None:
@@ -6091,12 +6115,14 @@ class Vaspwave(Vasprun):
         """Read raw metadata needed to initialize a ``Vaspwave`` object.
 
         This method only extracts file-backed metadata and does not derive any
-        wavefunction reconstruction state.
+        wavefunction reconstruction state. Files without a ``/wave`` group
+        return only version and structure metadata.
 
         Returns:
             dict[str, Any]: Parsed metadata including version information,
-                structure data, wavefunction dimensions, cutoff, lattice
-                matrix, and Fermi energy.
+                structure data, and a ``has_wavefunction_data`` flag. When a
+                ``/wave`` group exists, the metadata also includes wavefunction
+                dimensions, cutoff, lattice matrix, and Fermi energy.
         """
         with zopen(self.filename, "rb") as vwave_file, h5py.File(vwave_file, "r") as h5_file:
             version = self._parse_hdf5_value(h5_file["version"])
@@ -6281,7 +6307,13 @@ class Vaspwave(Vasprun):
 
     @staticmethod
     def _parse_structure(positions: dict[str, Any]) -> Structure:
-        """Parse crystal structure metadata stored in ``vaspwave.h5``."""
+        """Parse the positions-style structure layout used by ``vaspwave.h5``.
+
+        The expected dictionary layout is shared by ``/structure/positions``
+        and ``/locpot/position``. Required keys are ``ion_types``,
+        ``number_ion_types``, ``scale``, ``lattice_vectors``,
+        ``position_ions``, and ``direct_coordinates``.
+        """
         species = []
         for ispecie, specie in enumerate(positions["ion_types"]):
             species += [specie for _ in range(positions["number_ion_types"][ispecie])]
@@ -6293,11 +6325,24 @@ class Vaspwave(Vasprun):
             coords_are_cartesian=(positions["direct_coordinates"] != 1),
         )
 
+    @staticmethod
+    def _get_structure_mismatch(structure: Structure, other: Structure) -> str | None:
+        """Return the first mismatched field between two VASPwave structures."""
+        if list(structure.species) != list(other.species):
+            return "species"
+        if not np.allclose(structure.lattice.matrix, other.lattice.matrix):
+            return "lattice"
+        if not np.allclose(structure.frac_coords, other.frac_coords):
+            return "fractional coordinates"
+        return None
+
     @classmethod
-    def _parse_hdf5_structure(cls, h5_file) -> Structure | None:
+    def _parse_hdf5_structure(cls, h5_file: H5File | H5Group) -> Structure | None:
         """Read structure metadata from ``/structure/positions`` or ``/locpot/position``.
 
-        If both paths are present, they are expected to describe the same structure.
+        If both paths are present, they are expected to describe the same
+        structure, allowing small floating-point differences in lattice and
+        fractional coordinates.
         """
         structure_paths = ("/structure/positions", "/locpot/position")
         structures = [
@@ -6308,10 +6353,15 @@ class Vaspwave(Vasprun):
             return None
 
         structure = structures[0]
-        if any(other != structure for other in structures[1:]):
-            raise ValueError(
-                "vaspwave.h5 contains inconsistent structures at /structure/positions and /locpot/position."
-            )
+        # VASP normally writes the same structure to both branches; tolerate
+        # small floating-point differences if both are present.
+        for other in structures[1:]:
+            mismatch = cls._get_structure_mismatch(structure, other)
+            if mismatch is not None:
+                raise ValueError(
+                    "vaspwave.h5 contains inconsistent structures at /structure/positions and /locpot/position "
+                    f"({mismatch} differ)."
+                )
         return structure
 
     def _get_volumetric_structure(self) -> Structure:

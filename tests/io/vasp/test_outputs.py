@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import tarfile
+from contextlib import contextmanager
 from pathlib import Path
 from shutil import copyfile, copyfileobj
 
@@ -2460,31 +2461,38 @@ class TestVaspwave(MatSciTest):
             )
             wave_data.attrs["dtype"] = "complex"
 
-    @staticmethod
-    def _remove_vaspwave_structure(filename: str | Path) -> None:
+    @contextmanager
+    def _mutate_vaspwave_h5(self, filename: str | Path):
         with h5py.File(filename, "a") as h5_file:
-            del h5_file["structure"]
+            yield h5_file
 
-    @staticmethod
-    def _remove_vaspwave_wave_group(filename: str | Path) -> None:
-        with h5py.File(filename, "a") as h5_file:
-            del h5_file["wave"]
+    def _edit_vaspwave_h5(self, filename: str | Path, mutator) -> None:
+        with self._mutate_vaspwave_h5(filename) as h5_file:
+            mutator(h5_file)
 
-    @staticmethod
-    def _move_vaspwave_structure_to_locpot(filename: str | Path) -> None:
-        with h5py.File(filename, "a") as h5_file:
+    def _remove_vaspwave_structure(self, filename: str | Path) -> None:
+        self._edit_vaspwave_h5(filename, lambda h5_file: h5_file.__delitem__("structure"))
+
+    def _remove_vaspwave_wave_group(self, filename: str | Path) -> None:
+        self._edit_vaspwave_h5(filename, lambda h5_file: h5_file.__delitem__("wave"))
+
+    def _move_vaspwave_structure_to_locpot(self, filename: str | Path) -> None:
+        def mutator(h5_file) -> None:
             locpot_position = h5_file["locpot"].create_group("position")
             for key, value in h5_file["structure"]["positions"].items():
                 locpot_position.copy(value, key)
             del h5_file["structure"]
 
-    @staticmethod
-    def _make_locpot_structure_inconsistent(filename: str | Path) -> None:
-        with h5py.File(filename, "a") as h5_file:
+        self._edit_vaspwave_h5(filename, mutator)
+
+    def _make_locpot_structure_inconsistent(self, filename: str | Path) -> None:
+        def mutator(h5_file) -> None:
             locpot_position = h5_file["locpot"].create_group("position")
             for key, value in h5_file["structure"]["positions"].items():
                 locpot_position.copy(value, key)
             locpot_position["position_ions"][0, 0] = 0.125
+
+        self._edit_vaspwave_h5(filename, mutator)
 
     @staticmethod
     def _write_vaspwave_h5_from_wavecar(
