@@ -14,8 +14,11 @@ import timeit
 import warnings
 from typing import TYPE_CHECKING
 
-from pymatgen.core import Composition, Element, Species
+import numpy as np
+
+from pymatgen.core import Composition, Element, Lattice, Species
 from pymatgen.core.periodic_table import get_el_sp
+from pymatgen.util.coord_cython import is_coord_subset_pbc, pbc_shortest_vectors
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -134,6 +137,45 @@ def main() -> None:
     print("\n[Species]")
     run("Species('Fe', 2)", lambda: Species("Fe", 2))
     run("Species.from_str('Fe2+')", lambda: Species.from_str("Fe2+"))
+
+    # --- coord_cython hot paths --------------------------------------------
+    print("\n[coord_cython] pbc_shortest_vectors / is_coord_subset_pbc")
+    rng = np.random.default_rng(0)
+    lattice = Lattice.cubic(10.0)
+
+    # Small-ish (typical StructureMatcher inner call): 32 x 32.
+    fc32a = rng.random((32, 3))
+    fc32b = rng.random((32, 3))
+    run("pbc_shortest_vectors 32x32", lambda: pbc_shortest_vectors(lattice, fc32a, fc32b))
+
+    # Medium: 128 x 128.
+    fc128a = rng.random((128, 3))
+    fc128b = rng.random((128, 3))
+    run("pbc_shortest_vectors 128x128", lambda: pbc_shortest_vectors(lattice, fc128a, fc128b))
+
+    # Large: 256 x 256 (dominated by the i*j*27 inner kernel).
+    fc256a = rng.random((256, 3))
+    fc256b = rng.random((256, 3))
+    run("pbc_shortest_vectors 256x256", lambda: pbc_shortest_vectors(lattice, fc256a, fc256b))
+
+    # With mask (typical sparsity ~50%): also exercises the mask early-out.
+    mask128 = (rng.random((128, 128)) > 0.5).astype(np.int64)
+    run("pbc_shortest_vectors 128x128 +mask50", lambda: pbc_shortest_vectors(lattice, fc128a, fc128b, mask=mask128))
+
+    # With return_d2 (used by StructureMatcher).
+    run(
+        "pbc_shortest_vectors 128x128 return_d2",
+        lambda: pbc_shortest_vectors(lattice, fc128a, fc128b, return_d2=True),
+    )
+
+    # is_coord_subset_pbc: subset (16) inside superset (128).
+    fc_sub = fc128a[:16]
+    atol = np.array([1e-3, 1e-3, 1e-3])
+    sub_mask = np.zeros((16, 128), dtype=np.int64)
+    run(
+        "is_coord_subset_pbc 16-in-128",
+        lambda: is_coord_subset_pbc(fc_sub, fc128a, atol, sub_mask, pbc=(True, True, True)),
+    )
 
 
 if __name__ == "__main__":
